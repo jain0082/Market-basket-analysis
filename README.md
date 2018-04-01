@@ -1,5 +1,5 @@
 # Market-basket-analysis
-About this Dataset: Context Random Shopping cart
+About this Dataset: Random Shopping cart
 
 Content: Date, Transaction Id, Product name
 

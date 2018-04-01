@@ -1,0 +1,161 @@
+---
+title: "Association rules"
+author: "Monica Jain"
+date: "March 26, 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#Importing the libraries required for association rules and data exploration
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(arules)
+library(arulesViz)
+library(lubridate)
+
+```
+
+
+About this Dataset
+Context:
+Random Shopping cart
+
+Content:
+Date    - to add register
+Id      - transaction
+Product - for id transaction
+
+Acknowledgements:
+The dataset is Random Shopping cart https://www.kaggle.com/fanatiks/shopping-cart
+
+
+```{r}
+
+#Imorting the file with transactions data
+shop_items <- read.csv("dataset_group.csv")
+colnames(shop_items) <- c("Date","CustomerNo","Product")
+
+#Analyzing the class of every column and changing the column format accordingly
+str(shop_items)
+
+#Converting the date into date format
+shop_items$Date <- as.Date(shop_items$Date)
+
+#Since customers number is their identity, we factorise it
+shop_items$CustomerNo <- as.factor(shop_items$CustomerNo)
+
+#Analyzing the values to check for NA values or missing data
+summary(shop_items)
+
+#Analyzing number of unique customers visiting on each date
+count_cust <- shop_items %>% group_by(Date) %>% summarise(Cust_count = n_distinct(CustomerNo))
+ggplot(count_cust) + geom_bar(aes(x=Date, y= Cust_count),stat = "identity")
+
+```
+
+We cannot see any particular pattern from the above chart. We can see the data has missing date transaction.
+To inspect more, let us look into weekdays and months for any trend in the data.
+
+```{r}
+
+#Adding day of the week to the data set using the Date column
+shop_items$Day <- weekdays(shop_items$Date)
+shop_items$Day <- as.factor(shop_items$Day)
+
+#Analyzing customer count by weekdays and weekends
+count_cust_day <- shop_items %>% group_by(Day) %>% 
+  summarise(Cust_count = n_distinct(CustomerNo)) %>%      
+                        arrange(desc(Cust_count))
+ggplot(count_cust_day)+ 
+  geom_bar(aes(x= reorder(Day,-Cust_count), y=Cust_count,fill="red"), stat="identity") +
+  xlab("Customer count by weekdays") +
+  ylab("Customer count")
+
+```
+
+We can see Tuesdays and Saturdays have the highest customer trafic.
+
+```{r}
+
+#Analyzing customer count by month
+shop_items$Month <- month(shop_items$Date,label=TRUE, abbr = TRUE)
+cust_count_month <- shop_items %>% group_by(Month) %>% 
+  summarise(Cust_count = n_distinct(CustomerNo))
+ggplot(cust_count_month) + 
+  geom_bar(aes(x=Month, y= Cust_count, fill = Cust_count), stat="identity") +
+  ylab("Customer count")
+```
+
+We can see that January has the highest customer count, as indicative by the colour shading as well.
+
+```{r}
+
+#Analyzing the number of items purchased per customer
+num_items <- shop_items %>% group_by(CustomerNo) %>% summarise(Item_count = n())
+hist(num_items$Item_count, xlab = "Item count")
+
+```
+
+The frequency histogram shows that maximum customers buy items between 20 to 25.
+
+```{r}
+
+#Applying association rules for inspecting the transaction rules
+#Converting data into a binary transaction format
+transaction <- dcast(shop_items, CustomerNo~ Product)
+head(transaction[,1:6])
+
+#Converting the data into a matrix, removing the customer ID
+transaction <- data.matrix(transaction[,-1])
+head(transaction[,1:6])
+
+#Converting the data into an itemMatrix, required for apriori rules
+transaction <- as(transaction, "itemMatrix")
+
+#Analyzing the top 10 products pruchased by all customers, based on frequency
+itemFrequencyPlot(transaction,topN=10,type="absolute")
+```
+
+Applying apriori analysis
+The Apriori Algorithm is an influential algorithm for mining frequent itemsets for boolean association rules.
+Apriori uses a "bottom up" approach, where frequent subsets are extended one item at a time (a step known as candidate generation, and groups of candidates are tested against the data).
+
+You can play with the required support and confidence, and sort the rules by decreasing order of lift.
+Confidence calculates how strong an association is. It is the conditional probability of purchasing RHS if one has purchased LHS. It is calculated by by P(LHS U RHS)/P(LHS). This reprsents the probability of having RHS in the market basket, given the presence of LHS in the basket already.
+
+The support of an item or item set is the fraction of transactions in our data set that contain that item or item set. It is the probability of finding an itemset in all the transactions. It is calculated using [count(itemset)/total transactions].
+
+The lift value of an association rule is the ratio of the confidence of the rule and the expected confidence of the rule. It is the probability of finding certain itemsets toegther in a transaction, compared to the probability of finding them individually.
+
+```{r}
+
+rules <- apriori(data=transaction, parameter = list(support= 0.3, confidence= 0.7))
+rules <- sort(rules, by="lift", decreasing = TRUE)
+inspect(rules)
+
+plot(rules,method="graph",shading=NA)
+plot(rules,method="scatter",shading="lift")
+
+
+#We saw rules where vegetables is the most purchases itemset. Let's try to inspect rules where vegetables 
+#is not a part of the transactions
+
+rules_2 <- apriori(data=transaction, parameter = list(support= 0.1, confidence= 0.5))
+rules_2 <- subset(rules_2, !(rhs %in% "vegetables"))
+rules_2 <- sort(rules_2, by="lift", decreasing = TRUE)
+inspect(rules_2)
+
+plot(rules_2,method="graph",shading=NA)
+
+#Let's try finding rules where vegetables is neither in LHS nor in RHS
+rules_3 <- apriori(data=transaction, parameter = list(support= 0.1, confidence= 0.5))
+rules_3 <- subset(rules_3, !(rhs %in% "vegetables" | lhs %in% "vegetables"))
+rules_3 <- sort(rules_3, by="lift", decreasing = TRUE)
+inspect(rules_3)
+
+plot(rules_3,method="graph",control=list(layout=igraph::in_circle()))
+```
+
